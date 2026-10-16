@@ -1,0 +1,165 @@
+{
+  "id": "hitlReviewReminder0001",
+  "name": "HITL - Review reminder",
+  "active": false,
+  "nodes": [
+    {
+      "id": "7b6e9e21-1a44-4f3e-9f1a-5f6e8d2c1001",
+      "name": "Check every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "7b6e9e21-1a44-4f3e-9f1a-5f6e8d2c1002",
+      "name": "Fetch pending reviews",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/pending-review' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "7b6e9e21-1a44-4f3e-9f1a-5f6e8d2c1003",
+      "name": "Filter reviews waiting 30 minutes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return $input.all().flatMap(i=>{const rows=Array.isArray(i.json)?i.json:[i.json];return rows.filter(p=>p._id&&Number.isInteger(p.version)&&Number(p.waitingMinutes)>=30);});"
+      }
+    },
+    {
+      "id": "7b6e9e21-1a44-4f3e-9f1a-5f6e8d2c1004",
+      "name": "Build reminder requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return $input.all().map(i=>({json:{postId:i.json._id,expectedVersion:i.json.version,waitingMinutes:Number(i.json.waitingMinutes)}}));"
+      }
+    },
+    {
+      "id": "7b6e9e21-1a44-4f3e-9f1a-5f6e8d2c1005",
+      "name": "Create review reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/' + $json.postId + '/review-reminder' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({expectedVersion:$json.expectedVersion,waitingMinutes:$json.waitingMinutes}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Check every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Fetch pending reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch pending reviews": {
+      "main": [
+        [
+          {
+            "node": "Filter reviews waiting 30 minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter reviews waiting 30 minutes": {
+      "main": [
+        [
+          {
+            "node": "Build reminder requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build reminder requests": {
+      "main": [
+        [
+          {
+            "node": "Create review reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "errorWorkflow": "hitlErrors000001"
+  },
+  "versionId": "7b6e9e21-1a44-4f3e-9f1a-5f6e8d2c2001"
+}

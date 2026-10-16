@@ -1,0 +1,276 @@
+{
+  "name": "HITL - System health monitor",
+  "id": "hitlSystemHealth0001",
+  "active": false,
+  "settings": {
+    "timezone": "Asia/Ho_Chi_Minh",
+    "errorWorkflow": "hitlErrors000001"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "healthSchedule0001",
+      "name": "Check every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL + '/api/health' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "healthBackend0001",
+      "name": "Check backend health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/pending-generation' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "healthGeneration0001",
+      "name": "Check generation endpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -320,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/pending-review' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "healthReview0001",
+      "name": "Check review endpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/due' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "healthDue0001",
+      "name": "Check due endpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const checks = [\n  { name: 'backend health', value: $items('Check backend health')[0]?.json },\n  { name: 'pending generation', value: $items('Check generation endpoint')[0]?.json },\n  { name: 'pending review', value: $items('Check review endpoint')[0]?.json },\n  { name: 'due posts', value: $items('Check due endpoint')[0]?.json },\n];\n\nconst failures = checks.filter((c) => {\n  const value = c.value;\n  return value?.error || value?.statusCode >= 400 || value?.status >= 400;\n});\n\nif (failures.length === 0) {\n  return [{\n    json: {\n      healthy: true,\n      checkedAt: new Date().toISOString(),\n      checks: checks.map((c) => c.name),\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    healthy: false,\n    checkedAt: new Date().toISOString(),\n    failedChecks: failures.map((c) => c.name),\n    message: `System health check failed: ${failures.map((c) => c.name).join(', ')}`,\n  },\n}];"
+      },
+      "id": "healthEvaluate0001",
+      "name": "Evaluate system health",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.healthy }}",
+              "operation": "isFalse"
+            }
+          ]
+        }
+      },
+      "id": "healthFailure0001",
+      "name": "System unhealthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/workflow-errors' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ executionId: 'health-monitor:' + $execution.id, message: $json.message }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "healthReport0001",
+      "name": "Report health failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Check every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Check backend health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check backend health": {
+      "main": [
+        [
+          {
+            "node": "Check generation endpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check generation endpoint": {
+      "main": [
+        [
+          {
+            "node": "Check review endpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check review endpoint": {
+      "main": [
+        [
+          {
+            "node": "Check due endpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check due endpoint": {
+      "main": [
+        [
+          {
+            "node": "Evaluate system health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate system health": {
+      "main": [
+        [
+          {
+            "node": "System unhealthy?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "System unhealthy?": {
+      "main": [
+        [
+          {
+            "node": "Report health failure",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  }
+}

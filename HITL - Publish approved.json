@@ -1,0 +1,289 @@
+{
+  "name": "HITL - Publish approved",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hitl-publish",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "505eb9cb-1122-52c4-b3a9-dd357c41253d",
+      "name": "Approval webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "70c7975a-6979-4204-bdc8-c44e6c5e53fa",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||$json;return [{json:{postId:b.postId,expectedVersion:b.expectedVersion}}];"
+      },
+      "id": "fe7d1643-505e-5ffd-80c3-66f2f5356834",
+      "name": "Normalize publication",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "a82af469-1ff8-5661-b32d-87fd596a83d6",
+      "name": "Publish due every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/due' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "47f6bd94-07ea-534b-913e-769891de17c8",
+      "name": "Fetch due approved posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().flatMap(i=>{const rows=Array.isArray(i.json)?i.json:[i.json];return rows.filter(p=>p._id).map(p=>({json:{postId:p._id,expectedVersion:p.version}}));});"
+      },
+      "id": "4733e990-a28a-5f5b-8f03-c433538f2c8c",
+      "name": "Due requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/' + $json.postId + '/publish' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({expectedVersion:$json.expectedVersion}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "573f5fcb-a26a-5521-a908-3c3320d231d8",
+      "name": "Publish approved website version",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6e76abc8-de7b-4778-9c04-ed66fa0ad77d",
+              "leftValue": "={{ $env.FACEBOOK_PUBLISH_ENABLED === 'true' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "31253da3-95f5-58a9-99a0-29d0a1fff055",
+      "name": "Facebook live enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        32,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://127.0.0.1:5678/webhook/hitl-social\" }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({postId:$json._id,expectedVersion:$json.version}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "5137ceb9-71a9-5bc0-b18b-d8c81d45a5a2",
+      "name": "Call Facebook live workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        240
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Approval webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize publication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize publication": {
+      "main": [
+        [
+          {
+            "node": "Publish approved website version",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish due every minute": {
+      "main": [
+        [
+          {
+            "node": "Fetch due approved posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch due approved posts": {
+      "main": [
+        [
+          {
+            "node": "Due requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Due requests": {
+      "main": [
+        [
+          {
+            "node": "Publish approved website version",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish approved website version": {
+      "main": [
+        [
+          {
+            "node": "Facebook live enabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook live enabled": {
+      "main": [
+        [
+          {
+            "node": "Call Facebook live workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "errorWorkflow": "hitlErrors000001"
+  },
+  "versionId": "1a3e99a7-1757-481f-9008-0f1240d5ab15",
+  "meta": {
+    "instanceId": "ade8458fce37646df98f0946898c5a6ac9391bc8f3d4d590a43bc0007c6cddb4"
+  },
+  "nodeGroups": [],
+  "id": "hitlPublish00001",
+  "tags": []
+}

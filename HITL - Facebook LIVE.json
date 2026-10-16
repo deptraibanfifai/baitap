@@ -1,0 +1,91 @@
+{
+  "name": "HITL - Facebook LIVE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hitl-social",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "efbd42b4-1993-53bb-9db0-ceab531bb639",
+      "name": "Social webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "91a6baf0-07a8-45a4-b3c2-bc51573e992f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=[https://graph.facebook.com/v19.0/1350515474811503/feed](https://graph.facebook.com/v19.0/1350515474811503/feed)",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.FACEBOOK_PAGE_ACCESS_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "={{ $json.body.text || $json.body.message || $json.text }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "043ff033-82d5-4ecf-ae21-5fa80aeac703",
+      "name": "Publish Facebook approved version",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Social webhook": {
+      "main": [
+        [
+          {
+            "node": "Publish Facebook approved version",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "errorWorkflow": "hitlErrors000001"
+  },
+  "versionId": "3ece3b24-ecd5-4590-9a3d-90007512b42b",
+  "meta": {
+    "instanceId": "ade8458fce37646df98f0946898c5a6ac9391bc8f3d4d590a43bc0007c6cddb4"
+  },
+  "nodeGroups": [],
+  "id": "hitlSocial000001",
+  "tags": []
+}

@@ -1,0 +1,429 @@
+{
+  "name": "HITL - Generate image",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hitl-generate-image",
+        "authentication": "headerAuth",
+        "options": {}
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb001",
+      "name": "Image request webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "7be00e5f-ae69-45f6-a6eb-4fd5ba2d9001",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const b=$json.body||$json;\nif(!/^[a-f0-9]{24}$/i.test(String(b.postId||''))) throw new Error('Thiếu postId hợp lệ');\nif(!/^[0-9a-f-]{36}$/i.test(String(b.jobId||''))) throw new Error('Thiếu jobId hợp lệ');\nif(!['ai','internet'].includes(b.source)) throw new Error('Nguồn ảnh không được hỗ trợ');\nif(typeof b.prompt!=='string'||!b.prompt.trim()) throw new Error('Thiếu mô tả ảnh');\nreturn [{json:{postId:b.postId,jobId:b.jobId,source:b.source,prompt:b.prompt.slice(0,1000),topic:String(b.topic||'').slice(0,180)}}];"
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb002",
+      "name": "Validate request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7be00e5f-ae69-45f6-a6eb-4fd5ba2d9002",
+              "leftValue": "={{ $json.source }}",
+              "rightValue": "ai",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb003",
+      "name": "AI or Internet?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.cloudflare.com/client/v4/accounts/' + $env.CLOUDFLARE_ACCOUNT_ID + '/ai/run/' + $env.CLOUDFLARE_IMAGE_MODEL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CLOUDFLARE_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({prompt:$('Validate request').first().json.prompt,steps:Number($env.CLOUDFLARE_IMAGE_STEPS||4)}) }}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb004",
+      "name": "Generate with Cloudflare FLUX",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        160
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst req = $('Validate request').first().json;\nconst r = $input.first().json;\n\ntry {\n  if (r.error) {\n    throw new Error(String(r.error.message || r.error));\n  }\n\n  if (r.success !== true) {\n    const errors = Array.isArray(r.errors) ? r.errors : [];\n    throw new Error(\n      errors.map(e => e.message || JSON.stringify(e)).join('; ')\n      || 'Cloudflare image generation failed'\n    );\n  }\n\n  const image = r.result?.image;\n\n  if (typeof image !== 'string' || !image.length) {\n    throw new Error('Cloudflare did not return an image');\n  }\n\n  return [{\n    json: {\n      ok: true,\n      postId: req.postId,\n      payload: {\n        jobId: req.jobId,\n        source: 'ai',\n        imageBase64: image,\n        mimeType: 'image/png',\n        alt: req.topic\n      }\n    }\n  }];\n} catch (e) {\n  return [{\n    json: {\n      ok: false,\n      postId: req.postId,\n      jobId: req.jobId,\n      message: String(e.message || e).slice(0, 900)\n    }\n  }];\n}\n"
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb005",
+      "name": "Prepare AI result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.unsplash.com/photos/random?query=' + encodeURIComponent($('Validate request').first().json.prompt) + '&orientation=landscape&content_filter=high' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Client-ID ' + ($env.UNSPLASH_ACCESS_KEY || '') }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb006",
+      "name": "Find image on Unsplash",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        440
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const req=$('Validate request').first().json;const track=$input.first().json;const r=$('Find image on Unsplash').first().json;\ntry{if(!$env.UNSPLASH_ACCESS_KEY)throw new Error('Thiếu UNSPLASH_ACCESS_KEY trong .env');if(r.error)throw new Error('Unsplash API request failed');if(track.error)throw new Error('Unsplash download tracking failed');if(!r.links?.download_location)throw new Error('Unsplash thiếu download tracking URL');const imageUrl=r.urls?.regular||r.urls?.small;if(!imageUrl)throw new Error('Unsplash không tìm thấy ảnh phù hợp');const u=new URL(imageUrl);if(u.protocol!=='https:'||u.hostname!=='images.unsplash.com')throw new Error('URL ảnh trả về không an toàn');const name=r.user?.name||'Unsplash contributor';const html=r.user?.links?.html||'https://unsplash.com';const attributionUrl=html+(html.includes('?')?'&':'?')+'utm_source=media_management_hitl&utm_medium=referral';return [{json:{ok:true,postId:req.postId,payload:{jobId:req.jobId,source:'internet',imageUrl,alt:r.alt_description||req.topic,attribution:name+' / Unsplash',attributionUrl}}}];}catch(e){return [{json:{ok:false,postId:req.postId,jobId:req.jobId,message:String(e.message||e).slice(0,900)}}];}"
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb007",
+      "name": "Prepare Internet result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7be00e5f-ae69-45f6-a6eb-4fd5ba2d9003",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb008",
+      "name": "Image provider succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/' + $json.postId + '/image-result' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb009",
+      "name": "Save image and update post",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1660,
+        220
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{json:{postId:$json.postId,jobId:$json.jobId,message:$json.message||'Image workflow failed'}}];"
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb00a",
+      "name": "Build failure callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1660,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/' + $json.postId + '/image-failed' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({jobId:$json.jobId,message:$json.message}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb00b",
+      "name": "Update failed image status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1900,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Find image on Unsplash').first().json.links.download_location }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Client-ID ' + ($env.UNSPLASH_ACCESS_KEY || '') }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "e7e5c09a-46f0-4fd5-9f84-df3b382fb00c",
+      "name": "Track Unsplash download",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        600
+      ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Image request webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate request": {
+      "main": [
+        [
+          {
+            "node": "AI or Internet?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI or Internet?": {
+      "main": [
+        [
+          {
+            "node": "Generate with Cloudflare FLUX",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Find image on Unsplash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find image on Unsplash": {
+      "main": [
+        [
+          {
+            "node": "Track Unsplash download",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI result": {
+      "main": [
+        [
+          {
+            "node": "Image provider succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Internet result": {
+      "main": [
+        [
+          {
+            "node": "Image provider succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image provider succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Save image and update post",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build failure callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build failure callback": {
+      "main": [
+        [
+          {
+            "node": "Update failed image status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track Unsplash download": {
+      "main": [
+        [
+          {
+            "node": "Prepare Internet result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate with Cloudflare FLUX": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "versionId": "e7e5c09a-46f0-4fd5-9f84-df3b382fb099",
+  "id": "hitlImage000001",
+  "tags": []
+}

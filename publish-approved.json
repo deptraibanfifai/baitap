@@ -1,0 +1,573 @@
+{
+  "id": "hitlPublish00001",
+  "name": "HITL - Publish approved",
+  "active": false,
+  "nodes": [
+    {
+      "id": "505eb9cb-1122-52c4-b3a9-dd357c41253d",
+      "name": "Approval webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hitl-publish",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "webhookId": "70c7975a-6979-4204-bdc8-c44e6c5e53fa"
+    },
+    {
+      "id": "fe7d1643-505e-5ffd-80c3-66f2f5356834",
+      "name": "Normalize publication",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const b=$json.body||$json;return [{json:{postId:b.postId,expectedVersion:b.expectedVersion}}];"
+      }
+    },
+    {
+      "id": "a82af469-1ff8-5661-b32d-87fd596a83d6",
+      "name": "Publish due every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "47f6bd94-07ea-534b-913e-769891de17c8",
+      "name": "Fetch due approved posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/due' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "4733e990-a28a-5f5b-8f03-c433538f2c8c",
+      "name": "Due requests",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "jsCode": "return $input.all().flatMap(i=>{const rows=Array.isArray(i.json)?i.json:[i.json];return rows.filter(p=>p._id).map(p=>({json:{postId:p._id,expectedVersion:p.version}}));});"
+      }
+    },
+    {
+      "id": "573f5fcb-a26a-5521-a908-3c3320d231d8",
+      "name": "Publish approved website version",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/' + $json.postId + '/publish' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({expectedVersion:$json.expectedVersion}) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "retryOnFail": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "31253da3-95f5-58a9-99a0-29d0a1fff055",
+      "name": "Social mock enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1720,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6e76abc8-de7b-4778-9c04-ed66fa0ad77d",
+              "leftValue": "={{ $env.SOCIAL_MOCK_ENABLED === 'true' && $json.status === 'published' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "5137ceb9-71a9-5bc0-b18b-d8c81d45a5a2",
+      "name": "Call mock social workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://127.0.0.1:5678/webhook/hitl-social\" }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({postId:$json.postId,expectedVersion:$json.expectedVersion}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    },
+    {
+      "id": "a19d4ec2-5a1b-4a41-9e83-6f5c9a7d0101",
+      "name": "Website publish succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1460,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a19d4ec2-5a1b-4a41-9e83-6f5c9a7d0102",
+              "leftValue": "={{ $json.statusCode >= 200 && $json.statusCode < 300 && $json.body?.status === 'published' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a19d4ec2-5a1b-4a41-9e83-6f5c9a7d0103",
+      "name": "Prepare unknown publication failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1720,
+        240
+      ],
+      "parameters": {
+        "jsCode": "const result = $json;\nconst original = $('Prepare publication request').item.json;\n\nif (!original?.postId || original.expectedVersion === undefined ||\n    original.expectedVersion === null) {\n  throw new Error('Cannot safely report publication outcome: original post identity unavailable');\n}\n\nreturn {\n  json: {\n    postId: original.postId,\n    expectedVersion: original.expectedVersion,\n    message: String(\n      result.error?.message ||\n      result.body?.message ||\n      'Website publication result could not be confirmed'\n    ).slice(0, 1000),\n    outcome: 'unknown',\n    retryable: false\n  }\n};",
+        "mode": "runOnceForEachItem"
+      }
+    },
+    {
+      "id": "a19d4ec2-5a1b-4a41-9e83-6f5c9a7d0104",
+      "name": "Report unknown publication failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        240
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/' + $json.postId + '/publish-failed' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({expectedVersion:$json.expectedVersion,message:$json.message,outcome:'unknown',retryable:false}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const postId = $json.postId;\nconst expectedVersion = $json.expectedVersion;\n\nif (typeof postId !== 'string' || postId.length === 0) {\n  throw new Error('Missing postId; refusing to publish');\n}\nif (expectedVersion === undefined || expectedVersion === null) {\n  throw new Error('Missing expectedVersion; refusing to publish');\n}\n\nreturn { json: { postId, expectedVersion } };"
+      },
+      "id": "fffcd859-cf96-4767-8091-b79ce551c39e",
+      "name": "Prepare publication request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const original = $('Prepare publication request').item.json;\n\nif (!original?.postId || original.expectedVersion === undefined ||\n    original.expectedVersion === null) {\n  throw new Error('Cannot safely continue: original post identity unavailable');\n}\n\nif ($json.body?.status !== 'published') {\n  throw new Error('Website publication was not confirmed as published');\n}\n\nreturn {\n  json: {\n    postId: original.postId,\n    expectedVersion: original.expectedVersion,\n    status: 'published'\n  }\n};"
+      },
+      "id": "e7c33c0d-fc47-4476-b13d-d597042b15c0",
+      "name": "Prepare confirmed publication",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        -120
+      ]
+    },
+    {
+      "id": "6c17b08b-fe17-449b-a4e2-3579d6b7e5f6",
+      "name": "HTTP 4xx? Do not mark publication failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1460,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c6306814-ef33-4821-9cb7-f35a3af49aa9",
+              "leftValue": "={{ $json.statusCode >= 400 && $json.statusCode < 500 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "hieu-facebook-live-check-2026",
+      "name": "Facebook live enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6e76abc8-de7b-4778-9c04-ed66fa0ad77d",
+              "leftValue": "={{ $env.FACEBOOK_PUBLISH_ENABLED === 'true' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "hieu-facebook-live-call-2026",
+      "name": "Call Facebook live workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        260
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ \"http://127.0.0.1:5678/webhook/hitl-social\" }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({postId:$json.postId,expectedVersion:$json.expectedVersion}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Approval webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize publication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize publication": {
+      "main": [
+        [
+          {
+            "node": "Prepare publication request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish due every minute": {
+      "main": [
+        [
+          {
+            "node": "Fetch due approved posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch due approved posts": {
+      "main": [
+        [
+          {
+            "node": "Due requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Due requests": {
+      "main": [
+        [
+          {
+            "node": "Prepare publication request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish approved website version": {
+      "main": [
+        [
+          {
+            "node": "Website publish succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Social mock enabled": {
+      "main": [
+        [
+          {
+            "node": "Call mock social workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Website publish succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Prepare confirmed publication",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP 4xx? Do not mark publication failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare unknown publication failure": {
+      "main": [
+        [
+          {
+            "node": "Report unknown publication failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare publication request": {
+      "main": [
+        [
+          {
+            "node": "Publish approved website version",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare confirmed publication": {
+      "main": [
+        [
+          {
+            "node": "Social mock enabled",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Facebook live enabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP 4xx? Do not mark publication failed": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prepare unknown publication failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook live enabled": {
+      "main": [
+        [
+          {
+            "node": "Call Facebook live workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Call Facebook live workflow": {
+      "main": []
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "errorWorkflow": "hitlErrors000001"
+  },
+  "pinData": {},
+  "versionId": "e0aa348f-4aed-4b51-978a-2b2fb913773c"
+}

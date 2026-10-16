@@ -1,0 +1,94 @@
+{
+  "name": "HITL - Automation scheduler",
+  "nodes": [
+    {
+      "parameters": {"rule": {"interval": [{"field": "minutes", "minutesInterval": 1}]}},
+      "id": "f19466d0-b093-55a3-a1a8-3e2d4a2a3a01",
+      "name": "Check every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BACKEND_URL + '/api/internal/automation-scheduler/claim' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {"timeout": 15000}
+      },
+      "id": "f19466d0-b093-55a3-a1a8-3e2d4a2a3a02",
+      "name": "Claim due schedule",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300],
+      "credentials": {"httpHeaderAuth": {"id": "hitlHeaderAuth01", "name": "HITL shared secret"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const s=$json;return s&&s.due&&s.claimRunId?[{json:s}]:[];"
+      },
+      "id": "f19466d0-b093-55a3-a1a8-3e2d4a2a3a03",
+      "name": "Continue when due",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/automation-scheduler/runs/' + $json.claimRunId + '/post' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {"timeout": 30000}
+      },
+      "id": "f19466d0-b093-55a3-a1a8-3e2d4a2a3a04",
+      "name": "Create post and start AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "credentials": {"httpHeaderAuth": {"id": "hitlHeaderAuth01", "name": "HITL shared secret"}}
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$json;return r&&r.runId&&r.post? [{json:{runId:r.runId,postId:r.post._id}}]:[];"
+      },
+      "id": "f19466d0-b093-55a3-a1a8-3e2d4a2a3a05",
+      "name": "Prepare schedule completion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/automation-scheduler/complete' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({runId:$json.runId,postId:$json.postId}) }}",
+        "options": {"timeout": 15000}
+      },
+      "id": "f19466d0-b093-55a3-a1a8-3e2d4a2a3a06",
+      "name": "Advance schedule after creation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300],
+      "credentials": {"httpHeaderAuth": {"id": "hitlHeaderAuth01", "name": "HITL shared secret"}}
+    }
+  ],
+  "connections": {
+    "Check every minute": {"main": [[{"node": "Claim due schedule", "type": "main", "index": 0}]]},
+    "Claim due schedule": {"main": [[{"node": "Continue when due", "type": "main", "index": 0}]]},
+    "Continue when due": {"main": [[{"node": "Create post and start AI", "type": "main", "index": 0}]]},
+    "Create post and start AI": {"main": [[{"node": "Prepare schedule completion", "type": "main", "index": 0}]]},
+    "Prepare schedule completion": {"main": [[{"node": "Advance schedule after creation", "type": "main", "index": 0}]]}
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1", "binaryMode": "separate", "timezone": "Asia/Ho_Chi_Minh", "errorWorkflow": "hitlErrors000001"},
+  "versionId": "f19466d0-b093-55a3-a1a8-3e2d4a2a3a07",
+  "meta": {"instanceId": "ade8458fce37646df98f0946898c5a6ac9391bc8f3d4d590a43bc0007c6cddb4"},
+  "nodeGroups": [],
+  "id": "autoSched000001",
+  "tags": []
+}

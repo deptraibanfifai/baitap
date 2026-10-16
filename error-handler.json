@@ -1,0 +1,196 @@
+{
+  "id": "hitlErrors000001",
+  "name": "HITL - Error handler",
+  "active": false,
+  "nodes": [
+    {
+      "id": "385d8052-a076-5655-8ed0-0237444f7c74",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "f37db1a0-448f-5184-843e-60cd5259fd63",
+      "name": "Sanitize error notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0],
+      "parameters": {
+        "jsCode": "return [{json:{executionId:String($json.execution?.id||'unknown'),message:String($json.execution?.error?.message||$json.trigger?.error?.message||'Workflow failed').slice(0,1000)}}];"
+      }
+    },
+    {
+      "id": "eba49aa1-89ea-58e6-8397-8428d230cad0",
+      "name": "Notify dashboard",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/workflow-errors' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "640dd869-bda0-504a-b01f-9eb5d3181316",
+      "name": "Check stuck every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [720, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "d97e607e-8295-5f48-9df1-fd301a9ab5d3",
+      "name": "Find stuck generations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/stale-generation' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "1942374d-3631-57a7-8bd6-d0983f16307f",
+      "name": "Timeout failures",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 0],
+      "parameters": {
+        "jsCode": "return $input.all().flatMap(i=>{const rows=Array.isArray(i.json)?i.json:[i.json];return rows.filter(p=>p._id).map(p=>({json:{postId:p._id,generationId:p.generationId,message:'Generation timed out after 10 minutes; retry from admin editor.'}}));});"
+      }
+    },
+    {
+      "id": "189f54ec-f4e9-5497-b16c-0504712cd114",
+      "name": "Mark stuck generation failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 260],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.BACKEND_URL + '/api/internal/posts/' + $json.postId + '/failed' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({generationId:$json.generationId,message:$json.message}) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "hitlHeaderAuth01",
+          "name": "HITL shared secret"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Sanitize error notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize error notification": {
+      "main": [
+        [
+          {
+            "node": "Notify dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check stuck every minute": {
+      "main": [
+        [
+          {
+            "node": "Find stuck generations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find stuck generations": {
+      "main": [
+        [
+          {
+            "node": "Timeout failures",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Timeout failures": {
+      "main": [
+        [
+          {
+            "node": "Mark stuck generation failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "pinData": {},
+  "versionId": "e4166eaa-8a11-48ad-a079-d549e0ef2563"
+}
